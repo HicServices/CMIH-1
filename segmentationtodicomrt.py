@@ -1,0 +1,338 @@
+from lungmask import mask
+import SimpleITK as sitk
+import pydicom as dicom
+import numpy as np
+import pydicom
+from pydicom.dataset import Dataset, FileMetaDataset
+from pydicom.sequence import Sequence
+from pydicom.uid import generate_uid
+
+
+
+'''-------------------------------------------------------------------
+    Mask
+'''
+def Image2Mask(path,file_name):
+    input_image = sitk.ReadImage(path+'dicom/'+file_name)
+    segmentation = mask.apply(input_image)
+
+    x = segmentation[0]
+    img = sitk.GetImageFromArray(x)
+    sitk.WriteImage(img, path+'/Mask/Mask-'+file_name)
+    
+    
+    
+'''-------------------------------------------------------------------
+    BorderPixels2NumpyArray
+'''
+def isBoarder(i,j,val,num):
+    if num[i,j]==val and sum(sum(num[i-1:i+2,j-1:j+2]==val))<9:
+        isBoarder=True
+    else:
+        isBoarder=False
+    return isBoarder
+
+def BorderPixels2NumpyArray(path,file_name,region_number):
+    ds = dicom.read_file(path+'mask/'+'Mask-'+file_name, force=True)
+    num=ds.pixel_array
+    
+    (bi,bj)=num.shape
+    
+    # Find Border pixels of each region
+    #for region_number in range(2):
+    val=region_number
+    fi=-1
+    fj=-1
+    sw=False
+    for i in range(bi):
+        if sw:
+            break
+        for j in range(bj):
+            if num[i,j]==val:
+                fi=i
+                fj=j
+                #print(i,j,num[i,j])
+                sw=True
+                break
+    i=fi
+    j=fj
+    #print(i,j,num[i,j])
+
+    # Create numpy array of borders cordinations 
+    meet=np.ones(num.shape)
+    li=i
+    lj=j
+    meet[i,j]=0
+    borders=[]
+    a=1
+    while a<2000:
+        borders.append([i,j])
+        i=li
+        j=lj
+        a=a+1
+        #print(a)
+        if num[i+1,j]==val and isBoarder(i+1,j,val,num) and meet[i+1,j]:
+            li=i+1
+            lj=j
+            #print(li,lj,num[li,lj])
+            meet[li,lj]=0
+
+        elif num[i+1,j+1]==val and isBoarder(i+1,j+1,val,num) and meet[i+1,j+1]:
+            li=i+1
+            lj=j+1
+            #print(li,lj,num[li,lj])
+            meet[li,lj]=0
+        elif num[i,j+1]==val and isBoarder(i,j+1,val,num)and meet[i,j+1]:
+            li=i
+            lj=j+1
+            #print(li,lj,num[li,lj])
+            meet[li,lj]=0
+        elif num[i-1,j+1]==val and isBoarder(i-1,j+1,val,num)and meet[i-1,j+1]:
+            li=i-1
+            lj=j+1
+            #print(li,lj,num[li,lj])
+            meet[li,lj]=0
+
+        elif num[i-1,j]==val and isBoarder(i-1,j,val,num)and meet[i-1,j]:
+            li=i-1
+            lj=j
+            #print(li,lj,num[li,lj])
+            meet[li,lj]=0
+
+        elif num[i+1,j-1]==val and isBoarder(i+1,j-1,val,num)and meet[i+1,j-1]:
+            li=i+1
+            lj=j-1
+            #print(li,lj,num[li,lj])
+            meet[li,lj]=0
+        elif num[i,j-1]==val and isBoarder(i,j-1,val,num)and meet[i,j-1]:
+            li=i
+            lj=j-1
+            #print(li,lj,num[li,lj])
+            meet[li,lj]=0
+        elif num[i-1,j-1]==val and isBoarder(i-1,j-1,val,num)and meet[i-1,j-1]:
+            li=i-1
+            lj=j-1
+            #print(li,lj,num[li,lj])
+            meet[li,lj]=0
+        if (li==i and lj==j):
+            break
+    borders.append([fi,fj])
+
+    # Shapenning borders pixels 
+    for t in range(len(borders)):
+        #print(t,borders[t])
+        i=borders[t][0]
+        j=borders[t][1]
+        num[i,j]=100
+
+    file_name=file_name.replace('mask-','') 
+    np.save(path+ 'borders/Border'+str(val)+'-'+file_name.replace('Mask-','') +'.npy', borders)
+
+
+
+
+'''-------------------------------------------------------------------
+    Codify
+'''
+# Orientation
+
+def file_plane(IOP):
+    IOP_round = [round(x) for x in IOP]
+    plane = np.cross(IOP_round[0:3], IOP_round[3:6])
+    plane = [abs(x) for x in plane]
+    if plane[0] == 1:
+        return 0    #"Sagittal"
+    elif plane[1] == 1:
+        return 1    #"Coronal"
+    elif plane[2] == 1:
+        return 2    #"Transverse"
+
+def newPosition(n,ax,xp_rt,yp_rt,x_rt,y_rt):
+    if ax == 0:
+        return(xp_rt+n*2*abs(xp_rt)/abs(x_rt))
+    else:
+        return(yp_rt+n*2*abs(yp_rt)/abs(y_rt))
+
+
+def DicomRT(path,file_name,region_number):
+    file_path=path+'Dicom/'+file_name
+    dsorg = pydicom.read_file(file_path, force=True)
+
+    IOP = dsorg.ImageOrientationPatient
+    plane = file_plane(IOP)
+    planVal=dsorg.ImagePositionPatient[plane]
+    planVal=float(planVal)
+    
+    xp_rt=dsorg.ImagePositionPatient[0]
+    yp_rt=dsorg.ImagePositionPatient[1]
+
+    x_rt=dsorg.Columns
+    y_rt=dsorg.Rows
+
+    # Put Contoure pixel cordination Inside file
+    with open(path+'Borders/border'+str(region_number)+'-'+file_name+'.npy', 'rb') as f:
+        num = np.load(f)
+
+    borders=[]
+    for t in range(len(num)):
+        #print(t,num[t])    
+        if plane == 0:  #"Sagittal"
+            x=planVal
+            y=newPosition(num[t][1],0,xp_rt,yp_rt,x_rt,y_rt)
+            z=newPosition(num[t][0],1,xp_rt,yp_rt,x_rt,y_rt)
+        elif plane == 1:  #"Coronal"
+            x=newPosition(num[t][1],0,xp_rt,yp_rt,x_rt,y_rt)
+            y=planVal
+            z=newPosition(num[t][0],1,xp_rt,yp_rt,x_rt,y_rt)
+        elif plane == 2:#  "Transverse"
+            x=newPosition(num[t][1],0,xp_rt,yp_rt,x_rt,y_rt)
+            y=newPosition(num[t][0],1,xp_rt,yp_rt,x_rt,y_rt)
+            z=planVal
+        borders.extend([x,y,z])
+        
+    uid1=generate_uid()
+    uid2=generate_uid()
+    # File meta info data elements
+    file_meta = FileMetaDataset()
+    file_meta.FileMetaInformationGroupLength = 182
+    file_meta.FileMetaInformationVersion = b'\x00\x01'
+    file_meta.MediaStorageSOPClassUID = '1.2.840.10008.5.1.4.1.1.481.3'
+    file_meta.MediaStorageSOPInstanceUID = uid1 #'1.2.826.0.1.534147.578.2719282597.2020101685637449'
+    file_meta.TransferSyntaxUID = '1.2.840.10008.1.2.1'
+    file_meta.ImplementationClassUID = '1.2.40.0.13.1.1'
+    file_meta.ImplementationVersionName = 'dcm4che-2.0'
+
+    ds = Dataset()
+
+    # Main data elements
+    ds = Dataset()
+    ds.SOPClassUID = '1.2.840.10008.5.1.4.1.1.481.3'
+    ds.SOPInstanceUID =uid1 #'1.2.826.0.1.534147.578.2719282597.2020101685637449' #uid1
+    ds.StudyDate =dsorg.StudyDate #'20450916'
+    ds.StudyTime =dsorg.StudyTime # '000000'
+    ds.AccessionNumber = ''
+    ds.Modality = 'RTSTRUCT'
+    ds.Manufacturer =dsorg.Manufacturer # 'SIEMENS'
+    ds.ReferringPhysicianName = ''
+    ds.OperatorsName = ''
+    ds.ManufacturerModelName = dsorg.ManufacturerModelName # SOMATOM Definition Edge'
+    ds.PatientName = dsorg.PatientName # 'Covid7175'
+    ds.PatientID = dsorg.PatientID # 'Covid7175'
+    ds.PatientBirthDate = dsorg.PatientBirthDate # '19300101'
+    ds.PatientSex = dsorg.PatientSex # 'F'
+    ds.SoftwareVersions = dsorg.SoftwareVersions # 'syngo CT VA48A'
+    ds.StudyInstanceUID = dsorg.StudyInstanceUID #'1.2.826.0.1.3680043.9.3218.1.1.302475.1985.1592890895061.53221.0' # dsOrg.StudyInstanceUID
+    ds.SeriesInstanceUID = uid2 #'1.2.826.0.1.534147.578.2719282597.2020101685637450' #uid2
+    ds.StudyID = ''
+    ds.SeriesNumber = None
+    ds.FrameOfReferenceUID = dsorg.FrameOfReferenceUID #'1.2.826.0.1.3680043.9.3218.1.1.302475.1985.1592890895061.53224.0' # dsOrg.FrameOfReferenceUID
+    ds.PositionReferenceIndicator = ''
+    ds.StructureSetLabel = 'AIM_' + str(dsorg.InstanceNumber) +'_'+ str(region_number) #Scaling04
+    ds.StructureSetDate ='20201116'
+    ds.StructureSetTime ='085637'
+
+    # Referenced Frame of Reference Sequence
+    refd_frame_of_ref_sequence = Sequence()
+    ds.ReferencedFrameOfReferenceSequence = refd_frame_of_ref_sequence
+
+    # Referenced Frame of Reference Sequence: Referenced Frame of Reference 1
+    refd_frame_of_ref1 = Dataset()
+    refd_frame_of_ref1.FrameOfReferenceUID =dsorg.FrameOfReferenceUID # '1.2.826.0.1.3680043.9.3218.1.1.302475.1985.1592890895061.53224.0' 
+
+    # RT Referenced Study Sequence
+    rt_refd_study_sequence = Sequence()
+    refd_frame_of_ref1.RTReferencedStudySequence = rt_refd_study_sequence
+
+    # RT Referenced Study Sequence: RT Referenced Study 1
+    rt_refd_study1 = Dataset()
+    rt_refd_study1.ReferencedSOPClassUID = '1.2.840.10008.3.1.2.3.1'
+    rt_refd_study1.ReferencedSOPInstanceUID = dsorg.StudyInstanceUID #'1.2.826.0.1.3680043.9.3218.1.1.302475.1985.1592890895061.53221.0' # 
+
+    # RT Referenced Series Sequence
+    rt_refd_series_sequence = Sequence()
+    rt_refd_study1.RTReferencedSeriesSequence = rt_refd_series_sequence
+
+    # RT Referenced Series Sequence: RT Referenced Series 1
+    rt_refd_series1 = Dataset()
+    rt_refd_series1.SeriesInstanceUID =dsorg.SeriesInstanceUID #'1.2.826.0.1.3680043.9.3218.1.1.302475.1985.1592890895061.53222.0'
+
+    # Contour Image Sequence
+    contour_image_sequence = Sequence()
+    rt_refd_series1.ContourImageSequence = contour_image_sequence
+
+    # Contour Image Sequence: Contour Image 1
+    contour_image1 = Dataset()
+    contour_image1.ReferencedSOPClassUID = '1.2.840.10008.5.1.4.1.1.2'
+    contour_image1.ReferencedSOPInstanceUID = dsorg.SOPInstanceUID #'1.2.826.0.1.3680043.9.3218.1.1.302475.1985.1592890895061.53223.0' 
+    contour_image1.ReferencedFrameNumber = "1"
+    contour_image_sequence.append(contour_image1)
+    rt_refd_series_sequence.append(rt_refd_series1)
+    rt_refd_study_sequence.append(rt_refd_study1)
+    refd_frame_of_ref_sequence.append(refd_frame_of_ref1)
+
+
+    # Structure Set ROI Sequence
+    structure_set_roi_sequence = Sequence()
+    ds.StructureSetROISequence = structure_set_roi_sequence
+
+    # Structure Set ROI Sequence: Structure Set ROI 1
+    structure_set_roi1 = Dataset()
+    structure_set_roi1.ROINumber = "1"
+    structure_set_roi1.ReferencedFrameOfReferenceUID = dsorg.FrameOfReferenceUID #'1.2.826.0.1.3680043.9.3218.1.1.302475.1985.1592890895061.53224.0' # 
+    structure_set_roi1.ROIName = 'TestScale'
+    structure_set_roi1.ROIGenerationAlgorithm = ''
+    structure_set_roi_sequence.append(structure_set_roi1)
+
+
+    # ROI Contour Sequence
+    roi_contour_sequence = Sequence()
+    ds.ROIContourSequence = roi_contour_sequence
+
+    # ROI Contour Sequence: ROI Contour 1
+    roi_contour1 = Dataset()
+
+    # Contour Sequence
+    contour_sequence = Sequence()
+    roi_contour1.ContourSequence = contour_sequence
+
+    # Contour Sequence: Contour 1
+    contour1 = Dataset()
+
+    # Contour Image Sequence
+    contour_image_sequence = Sequence()
+    contour1.ContourImageSequence = contour_image_sequence
+
+    # Contour Image Sequence: Contour Image 1
+    contour_image1 = Dataset()
+    contour_image1.ReferencedSOPClassUID = '1.2.840.10008.5.1.4.1.1.2'
+    contour_image1.ReferencedSOPInstanceUID =dsorg.SOPInstanceUID #'1.2.826.0.1.3680043.9.3218.1.1.302475.1985.1592890895061.53223.0' 
+    contour_image1.ReferencedFrameNumber = "1"
+    contour_image_sequence.append(contour_image1)
+
+    contour1.ContourGeometricType = 'CLOSED_PLANAR'
+    contour1.NumberOfContourPoints = len(borders)/3#"4"
+    contour1.ContourNumber = "1"
+    contour1.ContourData =borders # [-276.91503267973, -162.50000000000, 516.398692810457, 270.222222222222, -162.50000000000, 514.725490196078, 271.895424836601, -162.50000000000, -177.98039215686, -271.89542483660, -162.50000000000, -176.30718954248]
+    contour_sequence.append(contour1)
+
+    roi_contour1.ReferencedROINumber = "1"
+    roi_contour_sequence.append(roi_contour1)
+
+
+    # RT ROI Observations Sequence
+    rtroi_observations_sequence = Sequence()
+    ds.RTROIObservationsSequence = rtroi_observations_sequence
+
+    # RT ROI Observations Sequence: RT ROI Observations 1
+    rtroi_observations1 = Dataset()
+    rtroi_observations1.ObservationNumber = "1"
+    rtroi_observations1.ReferencedROINumber = "1"
+    rtroi_observations1.RTROIInterpretedType = ''
+    rtroi_observations1.ROIInterpreter = ''
+    rtroi_observations_sequence.append(rtroi_observations1)
+
+    ds.file_meta = file_meta
+    ds.is_implicit_VR = False
+    ds.is_little_endian = True
+
+    ds.save_as(path+'RTSTRUCT/rt'+str(region_number)+'-'+file_name, write_like_original=False)
