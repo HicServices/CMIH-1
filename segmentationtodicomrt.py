@@ -136,12 +136,36 @@ def BorderPixels2NumpyArray(path,file_name,region_number):
 '''
 def BorderAlphabet2Numpy(path,file_name,region_number):
     #ds = dicom.read_file(path+'mask/'+file_name, force=True)
-    img=Image.open(path+'mask/Text-'+file_name)
+    print(path+'TextImage/'+file_name)
+    img=Image.open(path+'TextImage/'+file_name)
     img2 = img.convert("P")
+
+    #img2 = Image.open(fname).convert('L')
+    #img2 = np.asarray(img2)
     labeled, nr_objects = ndimage.label(img2) 
-    
-    num = np.array(labeled)    
-    
+
+    plt.imshow(img2)
+
+    Nimg=np.logical_not(img2)
+    #Nimg=Nimg[:,:,0]
+
+    plt.imshow(Nimg)
+
+    l1, nr_objects = ndimage.label(Nimg) 
+    print("Number of objects is {}".format(nr_objects))
+    # Number of objects is 4 
+    nl=(l1>1)
+    l2=nl*np.ones(l1.shape)
+    l3=l2*l1
+    l4=l3+nl*np.ones(l1.shape)*(labeled.max()-1)
+    plt.imshow(l4)
+
+    l_all=labeled+l4
+    plt.imshow(l_all)    
+
+    num = np.array(l_all)   
+
+    print('number of objects',int(l_all.max()))
     
     (bi,bj)=num.shape
     #print(bi,bj)
@@ -165,10 +189,11 @@ def BorderAlphabet2Numpy(path,file_name,region_number):
                 break
     i=fi
     j=fj
-    #print(i,j,num[i,j])
-
+    print('initial points',i,j,num[i,j])
+    print('val:',val)
+    print(np.sum(num==val))
     # Create numpy array of borders cordinations 
-    meet=np.ones(num.shape)
+    meet=np.zeros(num.shape)
     li=i
     lj=j
     #meet[i,j]=0
@@ -179,63 +204,71 @@ def BorderAlphabet2Numpy(path,file_name,region_number):
         i=li
         j=lj
         a=a+1
-        #print(a)
-        if num[i+1,j]==val and isBoarder(i+1,j,val,num) and meet[i+1,j]:
+        print(a)
+        if num[i+1,j]==val and isBoarder(i+1,j,val,num) and not meet[i+1,j]:
             li=i+1
             lj=j
-            #print(li,lj,num[li,lj])
-            meet[li,lj]=0
+            print(li,lj,num[li,lj])
+            meet[li,lj]=a
 
-        elif num[i+1,j+1]==val and isBoarder(i+1,j+1,val,num) and meet[i+1,j+1]:
+        elif num[i+1,j+1]==val and isBoarder(i+1,j+1,val,num) and not meet[i+1,j+1]:
             li=i+1
             lj=j+1
-            #print(li,lj,num[li,lj])
-            meet[li,lj]=0
-        elif num[i,j+1]==val and isBoarder(i,j+1,val,num)and meet[i,j+1]:
+            print(li,lj,num[li,lj])
+            meet[li,lj]=a
+        elif num[i,j+1]==val and isBoarder(i,j+1,val,num)and not meet[i,j+1]:
             li=i
             lj=j+1
-            #print(li,lj,num[li,lj])
-            meet[li,lj]=0
-        elif num[i-1,j+1]==val and isBoarder(i-1,j+1,val,num)and meet[i-1,j+1]:
+            print(li,lj,num[li,lj])
+            meet[li,lj]=a
+        elif num[i-1,j+1]==val and isBoarder(i-1,j+1,val,num)and not meet[i-1,j+1]:
             li=i-1
             lj=j+1
-            #print(li,lj,num[li,lj])
-            meet[li,lj]=0
+            print(li,lj,num[li,lj])
+            meet[li,lj]=a
 
-        elif num[i-1,j]==val and isBoarder(i-1,j,val,num)and meet[i-1,j]:
+        elif num[i-1,j]==val and isBoarder(i-1,j,val,num)and not meet[i-1,j]:
             li=i-1
             lj=j
-            #print(li,lj,num[li,lj])
-            meet[li,lj]=0
+            print(li,lj,num[li,lj])
+            meet[li,lj]=a
 
-        elif num[i+1,j-1]==val and isBoarder(i+1,j-1,val,num)and meet[i+1,j-1]:
+        elif num[i+1,j-1]==val and isBoarder(i+1,j-1,val,num)and not meet[i+1,j-1]:
             li=i+1
             lj=j-1
-            #print(li,lj,num[li,lj])
-            meet[li,lj]=0
-        elif num[i,j-1]==val and isBoarder(i,j-1,val,num)and meet[i,j-1]:
+            print(li,lj,num[li,lj])
+            meet[li,lj]=a
+        elif num[i,j-1]==val and isBoarder(i,j-1,val,num)and not meet[i,j-1]:
             li=i
             lj=j-1
-            #print(li,lj,num[li,lj])
-            meet[li,lj]=0
-        elif num[i-1,j-1]==val and isBoarder(i-1,j-1,val,num)and meet[i-1,j-1]:
+            print(li,lj,num[li,lj])
+            meet[li,lj]=a
+        elif num[i-1,j-1]==val and isBoarder(i-1,j-1,val,num)and not meet[i-1,j-1]:
             li=i-1
             lj=j-1
-            #print(li,lj,num[li,lj])
-            meet[li,lj]=0
+            print(li,lj,num[li,lj])
+            meet[li,lj]=a
         if (li==i and lj==j):
             [i,j]=borders.pop(-1)
             num[i,j]=val+1
-            [i,j]=borders.pop(-1)
+            if len(borders):
+                [i,j]=borders.pop(-1)
             li=i
             lj=j
-            #print('------------------------a:',len(borders))
-            #print('Del-----',i,j)
+            print('------------------------a:',len(borders))
+            print('Del-----',i,j)
+        m=meet[li-1:li+2,lj-1:lj+2]
+        print(a,m)
+        if a>5 and np.sum((m<4) & (m>0)):
+            li=fi
+            lj=fj
+            print (meet[li-1:li+1,lj-1:lj+1])
+            print('++++++++++++++++++++++setting first point')
         if (fi==li and fj==lj and a>2 ):
             break
             
     borders.append([fi,fj])
-    #print('------------------------a:',a)
+    print('------------------------a:',a)
     # Shapenning borders pixels 
     for t in range(len(borders)):
         #print(t,borders[t])
@@ -247,7 +280,8 @@ def BorderAlphabet2Numpy(path,file_name,region_number):
     file_name=file_name.replace('.png','.dcm')
     np.save(path+ 'borders/Border'+str(val+2)+'-'+file_name +'.npy', borders)
     print('Border'+str(val+2))
-
+    
+    
 def Text2Mask(path,name):
     fname=path+'TextImage/'+name
 
