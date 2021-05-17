@@ -369,7 +369,7 @@ def DicomRT(path,file_name,region_number):
     ds.SeriesNumber = None
     ds.FrameOfReferenceUID = dsorg.FrameOfReferenceUID #'1.2.826.0.1.3680043.9.3218.1.1.302475.1985.1592890895061.53224.0' # dsOrg.FrameOfReferenceUID
     ds.PositionReferenceIndicator = ''
-    ds.StructureSetLabel = 'AIM_Multi2_' + str(dsorg.InstanceNumber) +'_'+ str(region_number) #Scaling04
+    ds.StructureSetLabel = 'AIM_Multi3_' + str(dsorg.InstanceNumber) +'_'+ str(region_number) #Scaling04
     ds.StructureSetDate ='20201116'
     ds.StructureSetTime ='085637'
 
